@@ -33,16 +33,15 @@ tags: [adsense, google, revenue, analytics]
 visibility: fully_private
 
 publisher:
-  slug: your-org
+  slug: darrell-helyar
   # `name` is shown to operators on the /plugins installed-list and on the
   # marketplace card (NousViz core v0.9.5.8 / B185). Set it to your real
   # org or display name; placeholders like "Your Org" or "TBD" leak into
   # the operator UI.
-  name: Your Org
-  # contact_email is optional — uncomment and set before tagging your release.
-  # contact_email: ops@your-org.example
+  name: Darrell Helyar
+  contact_email: darrell@statsdrone.com
 
-repository: git@github.com:your-org/plugin-google-adsense.git
+repository: https://github.com/darrell-helyar/plugin-google-adsense.git
 
 
 # Long description (Markdown) ─────────────────────────────────────────────────
