@@ -1,6 +1,6 @@
--- 001_goog_items_down.sql
+-- 001_goog_daily_down.sql
 --
--- Down companion to 001_goog_items.sql. Core's uninstall handler runs every
+-- Down companion to 001_goog_daily.sql. Core's uninstall handler runs every
 -- *_down.sql in this directory in REVERSE lexicographic order when an
 -- operator selects "Uninstall with Remove data" — without this file, the
 -- plugin's tables would leak across uninstalls. See:
@@ -21,11 +21,10 @@
 -- Sync state table (no dependents).
 DROP TABLE IF EXISTS goog_sync_state;
 
--- Indexes on goog_items. Postgres would CASCADE these with `DROP TABLE`, but
--- explicit DROPs keep the intent readable and survive partial-migration
+-- Index on goog_daily. Postgres would CASCADE this with `DROP TABLE`, but an
+-- explicit DROP keeps the intent readable and survives partial-migration
 -- recovery.
-DROP INDEX IF EXISTS idx_goog_items_is_active;
-DROP INDEX IF EXISTS idx_goog_items_category;
+DROP INDEX IF EXISTS idx_goog_daily_report_date;
 
--- The items table itself.
-DROP TABLE IF EXISTS goog_items;
+-- The daily report table itself.
+DROP TABLE IF EXISTS goog_daily;

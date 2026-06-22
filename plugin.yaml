@@ -18,16 +18,16 @@ name: google-adsense
 display_name: Google Adsense
 version: 0.1.0
 description: >
-  A minimal NousViz plugin scaffold demonstrating manifest, migrations,
-  sync, hooks, dashboards, and a custom widget. Replace this with what
-  your plugin actually does.
+  Pulls your Google AdSense daily earnings report into NousViz: KPI tiles
+  for 30-day earnings, clicks and page RPM, plus an earnings-over-time
+  line chart. Nightly sync via the AdSense Management API v2.
 
 license: MIT
-icon: package                      # Lucide icon name. See lucide.dev/icons.
+icon: dollar-sign                  # Lucide icon name. See lucide.dev/icons.
 # Allowed categories: analytics, content, monitoring, integration,
 # productivity, compliance, premium, community. See docs/02-plugin-contract.md.
-category: integration
-tags: [example, scaffold]
+category: analytics
+tags: [adsense, google, revenue, analytics]
 # Allowed visibility values: public, public_premium, fully_private.
 # Use fully_private for first-party/internal plugins (install via direct URL only).
 visibility: fully_private
@@ -51,15 +51,24 @@ repository: git@github.com:your-org/plugin-google-adsense.git
 long_description: |
   ## What this plugin does
 
-  Replace this paragraph with what your plugin actually does. Pull
-  data from where, render what, on what schedule.
+  Brings your Google AdSense earnings into NousViz so you don't have to log
+  into the AdSense console. Each night it pulls the last 30 days of the daily
+  report (estimated earnings, page views, impressions, clicks, CTR, page RPM)
+  via the AdSense Management API v2 and renders KPI tiles plus an
+  earnings-over-time line chart.
 
   ## Setup
 
-  1. Install via the marketplace (private SSH URL).
-  2. In Settings, configure connection.
-  3. Click "Test connection" to verify.
-  4. Click "Run sync" to populate the table.
+  You need Google OAuth2 credentials with access to the AdSense Management API:
+
+  1. In Google Cloud Console, create an OAuth client (type "Web application" or
+     "Desktop") and enable the **AdSense Management API**.
+  2. Generate a **refresh token** for the AdSense account (one-time, via the
+     OAuth consent flow with scope `https://www.googleapis.com/auth/adsense.readonly`).
+  3. Find your AdSense account/publisher ID — it looks like `pub-XXXXXXXXXXXXXXXX`.
+  4. Install this plugin, open Settings, and enter Client ID, Client secret,
+     Refresh token, and Account ID.
+  5. Click **Test connection** to verify the OAuth exchange, then **Run sync**.
 
 
 # Infrastructure requirements ─────────────────────────────────────────────────
@@ -77,27 +86,43 @@ requires:
 # Reference: docs/02-plugin-contract.md "Connections"
 
 connections:
-  - name: example_api
-    type: api_key
+  - name: adsense_oauth
+    type: oauth2
     required: true
-    env_prefix: EXAMPLE_                # Legacy compat; can ignore on new plugins
-    label: Example API
+    label: Google AdSense (OAuth2)
     description: >
-      Replace this with what your external API needs.
+      OAuth2 credentials for the AdSense Management API v2. Create an OAuth
+      client in Google Cloud Console, enable the AdSense Management API, and
+      generate a refresh token with scope adsense.readonly.
     fields:
-      - name: api_key
-        label: API Key
-        type: password                  # secret — goes to credentials table
+      # client_secret + refresh_token contain "secret"/"token" → MUST be
+      # secret (CLAUDE.md field-secrecy rule). type: password routes them to
+      # the encrypted credentials table and masks them in the operator UI.
+      - name: client_id
+        label: Client ID
+        type: text                      # non-secret — plugin_settings
         required: true
-        description: API key from your external service.
+        description: OAuth2 client ID from Google Cloud Console.
 
-      - name: base_url
-        label: Base URL
-        type: url                       # non-secret — plugin_settings
-        required: false
-        scheme: https
-        default: https://api.example.com
-        description: Override only for non-production endpoints.
+      - name: client_secret
+        label: Client secret
+        type: password                  # secret — credentials table
+        required: true
+        description: OAuth2 client secret from Google Cloud Console.
+
+      - name: refresh_token
+        label: Refresh token
+        type: password                  # secret — credentials table
+        required: true
+        description: >
+          OAuth2 refresh token generated once via the consent flow with scope
+          https://www.googleapis.com/auth/adsense.readonly.
+
+      - name: account_id
+        label: Account ID
+        type: text                      # non-secret — plugin_settings
+        required: true
+        description: AdSense publisher/account ID, e.g. pub-XXXXXXXXXXXXXXXX.
 
 
 # Databases ───────────────────────────────────────────────────────────────────
@@ -110,7 +135,7 @@ databases:
   postgres:
     table_prefix: goog_                   # adjust per-plugin; keep short
     tables:
-      - goog_items
+      - goog_daily
       - goog_sync_state
 
 
@@ -121,9 +146,9 @@ databases:
 # entries with /plugin/<slug>/<dashboard-name> hrefs.
 
 navigation:
-  - label: Example
+  - label: Google AdSense
     path: /plugin/google-adsense
-    icon: Package
+    icon: DollarSign
 
 
 # Dashboards ──────────────────────────────────────────────────────────────────
@@ -143,7 +168,7 @@ dashboards:
 
 sync:
   script: src/google_adsense_sync.py
-  schedule: "0 */6 * * *"               # every 6 hours; cron 5-field
+  schedule: "0 3 * * *"                 # nightly at 03:00; cron 5-field
   supports_incremental: false
   execution_mode: async
   concurrency_policy: skip_if_running

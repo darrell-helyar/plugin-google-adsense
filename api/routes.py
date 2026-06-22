@@ -10,6 +10,9 @@ Patterns demonstrated here:
 - Action handlers that write job_runs rows so the setup-checklist
   predicates flip. See docs/06-sync-and-jobs.md.
 - Parameterised queries always — never f-strings, never .format().
+- Belt-and-braces auth: Depends(_require_analyst) on every data route
+  (the middleware also gates these, but plugins ship defense-in-depth —
+  see docs/03-data-and-routes.md and CLAUDE.md).
 - Structured logging via log_event for failures.
 
 Reference: docs/03-data-and-routes.md
@@ -23,22 +26,46 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+import requests
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 # SDK contract — never import from apps.*. Bare imports on purpose: a defensive
 # try/except ImportError demotes a hard load failure into a silent runtime
 # crash. The plugin loader surfaces real import errors in
 # /system/logs?source=plugin_loader. See docs/07-shipping-and-operator-flow.md.
-from nousviz_sdk import get_pg_conn, DictCursor, log_event
+from nousviz_sdk import (
+    get_pg_conn,
+    DictCursor,
+    get_credential,
+    get_connection_field,
+    log_event,
+)
 
 
 router = APIRouter()
 PLUGIN_SLUG = "google-adsense"
 BASE = f"/plugins/{PLUGIN_SLUG}"
+PLUGIN_VERSION = "0.1.0"   # bump alongside plugin.yaml.version
+
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _require_analyst(request: Request) -> str:
+    """Reject if the caller isn't an authenticated NousViz user.
+
+    The auth middleware already gates /api/plugins/* (v0.9.4.9+); this is
+    belt-and-braces defense-in-depth on data-bearing routes. The middleware
+    sets request.state.user_identity. See docs/03-data-and-routes.md
+    "Belt-and-braces auth on individual routes".
+    """
+    identity = getattr(request.state, "user_identity", None)
+    if not identity:
+        raise HTTPException(status_code=401, detail="Auth required")
+    return identity
 
 
 def _record_action_run(
@@ -46,10 +73,8 @@ def _record_action_run(
 ) -> None:
     """Write a job_runs row so action handlers advance the setup checklist.
 
-    `last_test_success` predicate looks at the most recent terminal status
-    of any job_runs row matching `sync:<slug>` OR `hook:<slug>:*`. This
-    helper writes a `hook:<slug>:test_connection` row when the test action
-    fires.
+    The `last_test_success` predicate looks at the most recent terminal status
+    of a job_runs row matching `hook:<slug>:test_connection`.
     """
     try:
         with get_pg_conn() as conn:
@@ -86,13 +111,14 @@ def health_check() -> dict[str, Any]:
     try:
         with get_pg_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT count(*) FROM goog_items")
-            (n,) = cur.fetchone()
+            cur.execute("SELECT count(*), max(report_date) FROM goog_daily")
+            n, latest = cur.fetchone()
         return {
             "plugin": PLUGIN_SLUG,
-            "version": "0.1.0",   # bump alongside plugin.yaml.version
+            "version": PLUGIN_VERSION,
             "ok": True,
-            "items_count": n,
+            "days_count": n,
+            "latest_report_date": latest.isoformat() if latest else None,
             "as_of": _now_iso(),
         }
     except Exception as e:
@@ -104,19 +130,44 @@ def health_check() -> dict[str, Any]:
 
 @router.post(f"{BASE}/test-connection")
 def test_connection() -> dict[str, Any]:
-    """Probe the external source. Writes a job_runs row so the operator's
-    setup checklist's `last_test_success` predicate flips.
+    """Probe AdSense by exchanging the refresh token for an access token.
 
-    Replace the body with a real probe. The skeleton just touches the
-    database to demonstrate the action contract.
+    A successful OAuth exchange proves the four credentials are coherent
+    without pulling a full report. Writes a job_runs row so the operator's
+    `last_test_success` setup-checklist predicate flips.
     """
     started = time.monotonic()
 
     try:
-        with get_pg_conn() as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT 1")
-            cur.fetchone()
+        client_id = get_connection_field(PLUGIN_SLUG, "client_id") or ""
+        client_secret = get_credential(PLUGIN_SLUG, "client_secret") or ""
+        refresh_token = get_credential(PLUGIN_SLUG, "refresh_token") or ""
+        account_id = get_connection_field(PLUGIN_SLUG, "account_id") or ""
+
+        if not all([client_id, client_secret, refresh_token, account_id]):
+            return {
+                "ok": False,
+                "level": "warning",
+                "toast": "Fill in Client ID, Client secret, Refresh token, and Account ID first.",
+            }
+
+        resp = requests.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            },
+            timeout=30,
+        )
+        if resp.status_code != 200 or not resp.json().get("access_token"):
+            try:
+                detail = resp.json().get("error_description") or resp.json().get("error", "")
+            except Exception:
+                detail = resp.text[:120]
+            raise RuntimeError(f"OAuth exchange failed (HTTP {resp.status_code}): {detail}")
+
     except Exception as e:
         cls = e.__class__.__name__
         msg = str(e)
@@ -127,11 +178,11 @@ def test_connection() -> dict[str, Any]:
             job_id=f"hook:{PLUGIN_SLUG}:test_connection",
             status="error",
             duration_ms=duration_ms,
-            detail={"stage": "probe", "error": f"{cls}: {msg}", "traceback_tail": tb},
+            detail={"stage": "oauth_probe", "error": f"{cls}: {msg}", "traceback_tail": tb},
         )
         log_event(
             "error",
-            f"Test connection failed: {cls}",
+            f"AdSense test connection failed: {cls}",
             detail={"error": msg, "traceback_tail": tb},
         )
         return {
@@ -145,12 +196,12 @@ def test_connection() -> dict[str, Any]:
         job_id=f"hook:{PLUGIN_SLUG}:test_connection",
         status="success",
         duration_ms=duration_ms,
-        detail={"stage": "probe", "ok": True},
+        detail={"stage": "oauth_probe", "ok": True},
     )
     return {
         "ok": True,
         "level": "info",
-        "toast": "Connection OK",
+        "toast": "Connection OK — AdSense credentials authenticated.",
         "duration_ms": duration_ms,
     }
 
@@ -218,117 +269,48 @@ def sync_now() -> dict[str, Any]:
 # ── Data routes ─────────────────────────────────────────────────────────────
 
 
-@router.get(f"{BASE}/overview")
-def overview() -> dict[str, Any]:
-    """One fetch returns everything the Overview dashboard needs.
-    Custom widgets (SDIKpiCard, SDIKpiGrid in real plugins) read from
-    here so a single network round-trip populates a whole panel.
-    """
+@router.get(f"{BASE}/kpis")
+def kpis(_: str = Depends(_require_analyst)) -> dict[str, Any]:
+    """The four headline KPIs over the last 30 days, in one round-trip."""
     with get_pg_conn() as conn:
         cur = DictCursor(conn.cursor())   # Correct DictCursor pattern (G-2)
-
         cur.execute("""
             SELECT
-                COUNT(*)                                AS total_items,
-                COUNT(*) FILTER (WHERE is_active)       AS active_items,
-                COUNT(*) FILTER (WHERE NOT is_active)   AS inactive_items,
-                ROUND(AVG(score), 1)                    AS avg_score,
-                MAX(synced_at)                          AS last_synced
-            FROM goog_items
+                COALESCE(SUM(estimated_earnings), 0)             AS earnings_30d,
+                COALESCE(SUM(clicks), 0)                         AS clicks_30d,
+                COALESCE(ROUND(AVG(NULLIF(rpm, 0)), 2), 0)       AS avg_rpm,
+                MAX(currency)                                    AS currency
+            FROM goog_daily
+            WHERE report_date >= (CURRENT_DATE - INTERVAL '30 days')
         """)
         stats = dict(cur.fetchone() or {})
 
         cur.execute("""
+            SELECT FLOOR(EXTRACT(EPOCH FROM (now() - MAX(completed_at))) / 60)::bigint AS minutes
+            FROM job_runs
+            WHERE job_id = %s AND status = 'success'
+        """, (f"sync:{PLUGIN_SLUG}",))
+        last = cur.fetchone()
+        stats["last_sync_minutes_ago"] = (last["minutes"] if last else None)
+
+    return {"stats": stats, "data_as_of": _now_iso()}
+
+
+@router.get(f"{BASE}/daily")
+def daily(_: str = Depends(_require_analyst)) -> dict[str, Any]:
+    """Daily earnings series (last 30 days), oldest first — line-chart shape."""
+    with get_pg_conn() as conn:
+        cur = DictCursor(conn.cursor())
+        cur.execute("""
             SELECT
-                COALESCE(NULLIF(category, ''), '(uncategorized)') AS category,
-                COUNT(*) AS count
-            FROM goog_items
-            GROUP BY COALESCE(NULLIF(category, ''), '(uncategorized)')
-            ORDER BY count DESC
-            LIMIT 10
+                to_char(report_date, 'YYYY-MM-DD') AS date,
+                estimated_earnings                 AS earnings,
+                clicks,
+                impressions,
+                rpm
+            FROM goog_daily
+            WHERE report_date >= (CURRENT_DATE - INTERVAL '30 days')
+            ORDER BY report_date ASC
         """)
-        by_category = [dict(r) for r in cur.fetchall()]
-
-    # Make timestamps JSON-serialisable
-    if stats.get("last_synced") and hasattr(stats["last_synced"], "isoformat"):
-        stats["last_synced"] = stats["last_synced"].isoformat()
-
-    return {
-        "stats": stats,
-        "by_category": by_category,
-        "data_as_of": _now_iso(),
-    }
-
-
-@router.get(f"{BASE}/items")
-def items(
-    limit:  int = Query(50, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
-    search: str | None = Query(None),
-    category: str | None = Query(None),
-    active_only: bool = Query(False),
-    sort: str = Query("name"),
-    sort_dir: str = Query("asc"),
-) -> dict[str, Any]:
-    """Filterable + paginated list of items. Used by the
-    SDIProgramsTable-style table widget pattern.
-
-    Allowlist sort columns + sort direction to prevent SQL injection
-    via `sort` query param.
-    """
-    SAFE_SORT = {"name", "category", "score", "synced_at"}
-    safe_sort = sort if sort in SAFE_SORT else "name"
-    safe_dir = "DESC" if sort_dir.upper() == "DESC" else "ASC"
-
-    where = ["1=1"]
-    params: list = []
-
-    if search:
-        where.append("name ILIKE %s")
-        params.append(f"%{search}%")
-    if category:
-        where.append("category = %s")
-        params.append(category)
-    if active_only:
-        where.append("is_active = true")
-
-    where_sql = " AND ".join(where)
-
-    with get_pg_conn() as conn:
-        cur = DictCursor(conn.cursor())
-        cur.execute(
-            f"""
-            SELECT id, external_id, name, category, score, is_active,
-                   synced_at
-            FROM goog_items
-            WHERE {where_sql}
-            ORDER BY {safe_sort} {safe_dir} NULLS LAST
-            LIMIT %s OFFSET %s
-            """,
-            (*params, limit, offset),
-        )
         rows = [dict(r) for r in cur.fetchall()]
-
-        cur.execute(f"SELECT COUNT(*) AS n FROM goog_items WHERE {where_sql}", params)
-        total = cur.fetchone()["n"]
-
-    for r in rows:
-        if r.get("synced_at") and hasattr(r["synced_at"], "isoformat"):
-            r["synced_at"] = r["synced_at"].isoformat()
-
-    return {"rows": rows, "total": total, "data_as_of": _now_iso()}
-
-
-@router.get(f"{BASE}/items/filters")
-def items_filters() -> dict[str, Any]:
-    """Returns dropdown options for filter controls. Read once at widget
-    mount time."""
-    with get_pg_conn() as conn:
-        cur = DictCursor(conn.cursor())
-        cur.execute(
-            "SELECT DISTINCT category FROM goog_items "
-            "WHERE category IS NOT NULL AND category != '' "
-            "ORDER BY category"
-        )
-        categories = [r["category"] for r in cur.fetchall()]
-    return {"categories": categories}
+    return {"rows": rows, "data_as_of": _now_iso()}

@@ -17,56 +17,75 @@ Reference: see `docs/08-sop-and-discipline.md` in the parent `nousviz-plugin-aut
 
 ## Implementation phases
 
-### v0.1.0 — Initial scaffold
+### v0.1.0 — Initial AdSense earnings dashboard
 
-**Ticket.** New plugin scaffolded from `nousviz-plugin-authoring` skeleton. First version proves the install flow works end-to-end on a NousViz instance.
+**Ticket.** Operators want their Google AdSense earnings visible inside NousViz
+without logging into the AdSense console. There's no AdSense data source today.
+First version pulls the daily AdSense report via the AdSense Management API v2
+and surfaces it as KPI cards + an earnings-over-time line chart.
+
+Intake answers (from `docs/00-conversation-starter.md`):
+1. **Source** — Google AdSense Management API v2 (REST).
+2. **Credentials** — OAuth2: `client_id`, `client_secret`, `refresh_token`,
+   plus a non-secret `account_id` (`pub-XXXXXXXX`). `client_secret` +
+   `refresh_token` are `secret: true` (field-secrecy rule, CLAUDE.md).
+3. **One row** — one row per day: `report_date` (unique key), `estimated_earnings`,
+   `page_views`, `impressions`, `clicks`, `ctr`, `rpm`, `currency`, `raw_data`.
+4. **See** — four stat KPIs (30-day earnings, 30-day clicks, avg page RPM, last
+   sync age) + an earnings-over-time line chart.
+5. **Do** — view + manual "Run sync" button. No write/edit.
+6. **Freshness** — nightly, cron `0 3 * * *`, plus the manual button.
+7. **Audience** — any logged-in NousViz user (`_require_analyst`).
+8. **Success** — see the test plan below.
 
 **Plan.**
-1. Walk the user through the eight intake questions in `docs/00-conversation-starter.md`. Capture answers here.
-2. Customize plugin.yaml: identity (name, slug, repo URL, publisher), description, connections.fields (mark sensitive fields `secret: true`), category from the documented allowlist.
-3. Customize migration: rename `goog_items` to fit your domain. Confirm column types match the row-shape from intake question 3.
-4. Customize sync: replace `_fetch_items` fixture with real external fetch. Use credentials from `get_credential()` and config from `get_connection_field()`.
-5. Customize routes: replace demo overview/items endpoints with what your widgets need. Add `Depends(_require_analyst)` to every data route.
-6. Customize dashboard: pick KPIs that matter, point chart at real data. Confirm panels match the layout from intake question 4.
-7. Customize widget: rename, change colour / value path / endpoint. If no custom widget needed, run `new-plugin.sh --no-widget` instead.
-8. Run `scripts/smoke-test.sh`. Fix any failures.
-9. Run `scripts/preflight.sh`. Fix any failures.
-10. Tag v0.1.0 and install on dev NousViz instance.
+1. plugin.yaml: replace the demo connection with the OAuth2 + `account_id`
+   fields; set `databases.tables` to `goog_daily` + `goog_sync_state`; set
+   sync schedule to `0 3 * * *`; category `analytics`.
+2. Migration: replace `goog_items` with `goog_daily` (one row per day, unique
+   on `report_date`); keep `goog_sync_state`. Mirror in the down migration.
+3. Sync: exchange `refresh_token` → access token at Google's token endpoint,
+   call `reports:generate` for `LAST_30_DAYS` with dimension `DATE`, upsert
+   one row per day on `report_date`.
+4. Routes: `/health-check`, `/test-connection` (token probe), `/sync-now`,
+   `/kpis` (the four aggregates), `/daily` (chart series). Every data route
+   gets `Depends(_require_analyst)`.
+5. Dashboard: four stat KPIs + one `line_chart` of earnings by day.
+6. `scripts/smoke-test.sh` then `scripts/preflight.sh`; fix failures.
+7. Tag v0.1.0, install on dev NousViz, verify deployed version == tag.
 
-**Test plan.** Use the template from `docs/11-verification-spec.md` in the parent guide. Replace every `<placeholder>` with values specific to this plugin. Below is the v0.1.0 minimum — copy the full template for richer test plans:
+**Test plan.** Operator-visible checks (intake Q8):
 
 #### Install + first launch
 - [ ] Install completes without error toast
-- [ ] Sidebar shows the plugin's display name
-- [ ] Click sidebar entry — page loads at `/plugin/<slug>` without "Plugin failed to load" banner
+- [ ] Sidebar shows "Google Adsense"
+- [ ] Page loads at `/plugin/google-adsense` without "Plugin failed to load"
 - [ ] No browser console errors
 
 #### Settings tab
 - [ ] Setup checklist shows 4 items
-- [ ] Connection form has the expected fields
-- [ ] Sensitive fields render as ●●●●●●●●; structural fields render as plain text
+- [ ] Connection form shows: Client ID, Client secret, Refresh token, Account ID
+- [ ] Client secret + Refresh token render as ●●●●●●●●; Client ID + Account ID render as plain text
 
 #### Configure → test → sync
-- [ ] Save credentials → "Configure connection" item ticks green
-- [ ] Click "Test connection" → success toast → "Verify connection" item ticks green
-- [ ] Click "Run sync" → sync queues + completes → "Run the first sync" ticks green
+- [ ] Save credentials → "Configure connection" ticks green
+- [ ] "Test connection" → success toast (token exchange OK) → "Verify connection" ticks green
+- [ ] "Run sync" → sync queues + completes → "Run the first sync" ticks green
 - [ ] Within 30s of install, "Confirm automatic sync is scheduled" ticks green
-- [ ] Setup checklist disappears (all 4 green)
 
 #### Overview dashboard
-- [ ] All KPI tiles show numeric values (no NaN)
-- [ ] Bar chart renders with at least 1 bar
-- [ ] Table renders with at least 1 row
-- [ ] (If custom widget) Custom widget renders without placeholder
+- [ ] Four KPI tiles show numeric values, no NaN (30-day earnings, 30-day clicks, avg RPM, last sync)
+- [ ] 30-day earnings figure matches the AdSense console within rounding
+- [ ] Earnings line chart renders with at least 28 daily points
 - [ ] Browser console clean across page load + tab switching
 
 #### Pre-tag verification
-- [ ] `git ls-remote --tags origin` shows `v0.1.0` (tag pushed, not just created locally)
-- [ ] `plugin.yaml` `version:` field matches the latest tag exactly
+- [ ] `git ls-remote --tags origin` shows `v0.1.0` (tag pushed, not just local)
+- [ ] `plugin.yaml` `version:` matches the latest tag exactly
 - [ ] `scripts/smoke-test.sh` passes
 - [ ] `scripts/preflight.sh` passes
 
-**CHANGELOG stub.** See `CHANGELOG.md` "[0.1.0] — Initial scaffold".
+**CHANGELOG stub.** See `CHANGELOG.md` "[0.1.0]".
 
 ---
 

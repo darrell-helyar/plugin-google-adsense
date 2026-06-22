@@ -1,10 +1,7 @@
 # dashboards/overview.yaml — Overview tab for google-adsense.
 #
-# Demonstrates one of every common panel type:
-#   - stat       — numeric KPI tile
-#   - bar_chart  — declarative bar chart
-#   - table      — read-only paginated table (no sort/filter/search)
-#   - custom     — plugin-shipped React widget (frontend.components)
+# Declarative panels (no custom React widget). Four KPI tiles + one
+# earnings-over-time line chart, all driven by SQL against goog_daily.
 #
 # Reference: docs/04-dashboards-declarative.md
 
@@ -16,25 +13,33 @@ panels:
 
   # ── KPI tiles ─────────────────────────────────────────────────────────────
   # `stat` panels coerce values to numeric — never return TEXT here or you'll
-  # render "NaN". See appendix-gotchas.md G-14.
+  # render "NaN". Units live in the label, not the value. See gotchas G-14.
 
-  - id: total_items
+  - id: earnings_30d
     type: stat
-    label: Total items
-    query: SELECT count(*) AS value FROM goog_items
+    label: Earnings — last 30 days
+    query: >
+      SELECT ROUND(COALESCE(SUM(estimated_earnings), 0), 2) AS value
+      FROM goog_daily
+      WHERE report_date >= (CURRENT_DATE - INTERVAL '30 days')
     fallback_empty: true
 
-  - id: active_items
+  - id: clicks_30d
     type: stat
-    label: Active
-    query: SELECT count(*) AS value FROM goog_items WHERE is_active = true
+    label: Clicks — last 30 days
+    query: >
+      SELECT COALESCE(SUM(clicks), 0) AS value
+      FROM goog_daily
+      WHERE report_date >= (CURRENT_DATE - INTERVAL '30 days')
     fallback_empty: true
 
-  - id: avg_score
+  - id: avg_rpm
     type: stat
-    label: Avg score
-    # Numeric only — `% suffix` would produce NaN. Move units to label.
-    query: SELECT ROUND(AVG(score), 1) AS value FROM goog_items WHERE score IS NOT NULL
+    label: Avg page RPM (30d)
+    query: >
+      SELECT ROUND(COALESCE(AVG(NULLIF(rpm, 0)), 0), 2) AS value
+      FROM goog_daily
+      WHERE report_date >= (CURRENT_DATE - INTERVAL '30 days')
     fallback_empty: true
 
   - id: last_sync_age
@@ -49,52 +54,22 @@ panels:
     fallback_empty: true
 
 
-  # ── Bar chart ─────────────────────────────────────────────────────────────
-  # x_label / y_label propagate to the chart legend on NousViz core v0.9.4.8+.
-  # On older cores, the legend reads literal "y". See appendix-gotchas.md G-16.
+  # ── Earnings over time ────────────────────────────────────────────────────
+  # Single-series line chart: one point per day. x_label / y_label propagate to
+  # the legend on NousViz core v0.9.4.8+. See appendix-gotchas.md G-16.
 
-  - id: items_by_category
-    type: bar_chart
-    label: Items by category
+  - id: earnings_over_time
+    type: line_chart
+    label: Estimated earnings per day (30d)
     query: >
       SELECT
-        COALESCE(NULLIF(category, ''), '(uncategorized)') AS x,
-        count(*) AS y
-      FROM goog_items
-      GROUP BY COALESCE(NULLIF(category, ''), '(uncategorized)')
-      ORDER BY y DESC
-      LIMIT 10
-    x_key: x
-    y_key: y
-    x_label: Category
-    y_label: Items
-    fallback_empty: true
-
-
-  # ── Table ─────────────────────────────────────────────────────────────────
-  # Declarative `table` is read-only — no sort, no filter, no search, no
-  # click-to-drill. Good for short fixed lists. For interactive tables,
-  # write a custom widget. See appendix-gotchas.md G-17.
-
-  - id: recent_items
-    type: table
-    label: Recent items (top 50)
-    query: >
-      SELECT
-        external_id,
-        name,
-        COALESCE(category, '—') AS category,
-        score,
-        CASE WHEN is_active THEN 'Yes' ELSE 'No' END AS active,
-        to_char(synced_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') AS synced
-      FROM goog_items
-      ORDER BY synced_at DESC
-      LIMIT 50
-    columns:
-      - { key: external_id, label: ID }
-      - { key: name,        label: Name }
-      - { key: category,    label: Category }
-      - { key: score,       label: Score, type: number }
-      - { key: active,      label: Active }
-      - { key: synced,      label: Synced (UTC) }
+        to_char(report_date, 'YYYY-MM-DD') AS date,
+        ROUND(estimated_earnings, 2)       AS earnings
+      FROM goog_daily
+      WHERE report_date >= (CURRENT_DATE - INTERVAL '30 days')
+      ORDER BY report_date
+    x_key: date
+    y_key: earnings
+    x_label: Date
+    y_label: Earnings
     fallback_empty: true

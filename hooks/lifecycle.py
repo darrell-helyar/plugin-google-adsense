@@ -40,14 +40,14 @@ def on_credentials_saved(ctx: HookContext) -> HookResult:
     helpful message and the operator can retry.
     """
     try:
-        # Replace this body with a real probe of your external API.
-        # The credential broker is available here — read via:
+        # The operator clicks "Test connection" to verify the OAuth exchange
+        # (see api/routes.py:test_connection), so this hook stays light: just
+        # confirm the four fields are present. The credential broker is
+        # available here if a deeper probe is ever wanted:
         #
         #   from nousviz_sdk import get_credential, get_connection_field
-        #   api_key = get_credential("google-adsense", "api_key")
-        #   base_url = get_connection_field("google-adsense", "base_url")
-        #
-        # Then make an HTTP request, raise on auth failure, etc.
+        #   client_secret = get_credential("google-adsense", "client_secret")
+        #   account_id    = get_connection_field("google-adsense", "account_id")
         pass
     except Exception as e:
         return HookResult(

@@ -10,16 +10,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ---
 
-## [0.1.0] — Initial scaffold
+## [0.1.0] — Initial release
 
 ### Added
 
-- Plugin manifest declaring connection (api_key + base_url), database (`goog_items`), navigation, dashboards, sync, hooks, actions, setup checklist, and one frontend widget.
-- One Postgres migration creating `goog_items` and `goog_sync_state`.
-- Sync script subclassing `BaseSyncScript` — populates `goog_items` from a fixture (replace with real fetch).
-- HTTP routes: `/health-check`, `/test-connection`, `/sync-now`, `/overview`, `/items`, `/items/filters`.
-- Lifecycle hooks: `on_credentials_saved`, `on_first_run_success`.
-- Overview dashboard with one stat KPI, one bar chart, one declarative table.
+- Google AdSense earnings dashboard. Pulls the daily AdSense report (last 30 days) from the AdSense Management API v2 and surfaces it inside NousViz.
+- OAuth2 connection: Client ID, Client secret, Refresh token, and Account ID (`pub-XXXXXXXX`). Client secret and refresh token are stored encrypted; Client ID and Account ID are plain config.
+- Overview dashboard: four KPI tiles (30-day earnings, 30-day clicks, average page RPM, last sync age) and an earnings-over-time line chart.
+- Nightly sync at 03:00 (cron `0 3 * * *`) plus a manual **Run sync** button. **Test connection** verifies the OAuth token exchange.
+- One Postgres migration creating `goog_daily` (one row per day, keyed on `report_date`) and `goog_sync_state`.
 
 ### Plugin author release checklist (every release)
 
