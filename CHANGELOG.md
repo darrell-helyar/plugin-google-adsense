@@ -6,9 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-### Planned later (v0.3.0)
+(Draft your next CHANGELOG entry here BEFORE writing code. See `PLAN.md`.)
 
-- Selectable date ranges (Last 7 / 30 / 90 / 365 days, This year, All time), 3 years of history, and a payments-received list — these need an interactive React widget.
+---
+
+## [0.3.0] — Period tabs + history backfill
+
+### Added
+
+- **Time-period tabs.** Pick **30 Days · 60 Days · 90 Days · This Year · Last Year · All Time** from the tabs at the top of the plugin. Each shows earnings, clicks, average RPM, current balance, and an earnings chart for that period (daily for the shorter ranges, monthly for the year-scale ones).
+- **History backfill.** The sync now pulls up to ~3 years of daily data (was 30 days), so the longer tabs have something to show. The first sync after updating takes a little longer as it backfills.
+
+### Fixed
+
+- **Current balance.** Reworked how the unpaid balance is read from AdSense (by payment name rather than a date guess) and added logging of the raw payments response, so the balance figure populates correctly.
 
 ---
 

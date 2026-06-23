@@ -45,7 +45,7 @@ from nousviz_sdk import (
 router = APIRouter()
 PLUGIN_SLUG = "google-adsense"
 BASE = f"/plugins/{PLUGIN_SLUG}"
-PLUGIN_VERSION = "0.2.2"   # bump alongside plugin.yaml.version
+PLUGIN_VERSION = "0.3.0"   # bump alongside plugin.yaml.version
 
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 

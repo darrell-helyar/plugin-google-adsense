@@ -1,0 +1,75 @@
+# dashboards/overview_ytd.yaml — "This Year" period tab.
+# Longer window → the earnings chart aggregates by MONTH so it stays readable.
+# Reference: docs/04-dashboards-declarative.md
+
+title: This year (year-to-date)
+db_engine: postgres
+refresh_seconds: 60
+
+panels:
+
+  - id: earnings_ytd
+    type: stat
+    label: Earnings (this year)
+    query: >
+      SELECT ROUND(COALESCE(SUM(estimated_earnings), 0), 2) AS value
+      FROM goog_daily
+      WHERE report_date >= date_trunc('year', CURRENT_DATE)::date
+    fallback_empty: true
+
+  - id: clicks_ytd
+    type: stat
+    label: Clicks (this year)
+    query: >
+      SELECT COALESCE(SUM(clicks), 0) AS value
+      FROM goog_daily
+      WHERE report_date >= date_trunc('year', CURRENT_DATE)::date
+    fallback_empty: true
+
+  - id: avg_rpm_ytd
+    type: stat
+    label: Avg page RPM (this year)
+    query: >
+      SELECT ROUND(COALESCE(AVG(NULLIF(rpm, 0)), 0), 2) AS value
+      FROM goog_daily
+      WHERE report_date >= date_trunc('year', CURRENT_DATE)::date
+    fallback_empty: true
+
+  - id: current_balance
+    type: stat
+    label: Current balance (unpaid)
+    query: >
+      SELECT ROUND(COALESCE((
+        SELECT (value->>'amount')::numeric
+        FROM goog_sync_state
+        WHERE key = 'balance'
+      ), 0), 2) AS value
+    fallback_empty: true
+
+  - id: last_sync_age
+    type: stat
+    label: Last sync (min ago)
+    live: true
+    refresh_seconds: 30
+    query: >
+      SELECT FLOOR(EXTRACT(EPOCH FROM (now() - MAX(completed_at))) / 60)::bigint AS value
+      FROM job_runs
+      WHERE job_id = 'sync:google-adsense' AND status = 'success'
+    fallback_empty: true
+
+  - id: earnings_by_month_ytd
+    type: line_chart
+    label: Estimated earnings per month (this year)
+    query: >
+      SELECT
+        to_char(date_trunc('month', report_date), 'YYYY-MM') AS month,
+        ROUND(SUM(estimated_earnings), 2)                    AS earnings
+      FROM goog_daily
+      WHERE report_date >= date_trunc('year', CURRENT_DATE)::date
+      GROUP BY date_trunc('month', report_date)
+      ORDER BY date_trunc('month', report_date)
+    x_key: month
+    y_key: earnings
+    x_label: Month
+    y_label: Earnings
+    fallback_empty: true

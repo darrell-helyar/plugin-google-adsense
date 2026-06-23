@@ -1,0 +1,73 @@
+# dashboards/overview_90d.yaml — "90 Days" period tab.
+# Reference: docs/04-dashboards-declarative.md
+
+title: Last 90 days
+db_engine: postgres
+refresh_seconds: 60
+
+panels:
+
+  - id: earnings_90d
+    type: stat
+    label: Earnings (90d)
+    query: >
+      SELECT ROUND(COALESCE(SUM(estimated_earnings), 0), 2) AS value
+      FROM goog_daily
+      WHERE report_date >= (CURRENT_DATE - INTERVAL '90 days')
+    fallback_empty: true
+
+  - id: clicks_90d
+    type: stat
+    label: Clicks (90d)
+    query: >
+      SELECT COALESCE(SUM(clicks), 0) AS value
+      FROM goog_daily
+      WHERE report_date >= (CURRENT_DATE - INTERVAL '90 days')
+    fallback_empty: true
+
+  - id: avg_rpm_90d
+    type: stat
+    label: Avg page RPM (90d)
+    query: >
+      SELECT ROUND(COALESCE(AVG(NULLIF(rpm, 0)), 0), 2) AS value
+      FROM goog_daily
+      WHERE report_date >= (CURRENT_DATE - INTERVAL '90 days')
+    fallback_empty: true
+
+  - id: current_balance
+    type: stat
+    label: Current balance (unpaid)
+    query: >
+      SELECT ROUND(COALESCE((
+        SELECT (value->>'amount')::numeric
+        FROM goog_sync_state
+        WHERE key = 'balance'
+      ), 0), 2) AS value
+    fallback_empty: true
+
+  - id: last_sync_age
+    type: stat
+    label: Last sync (min ago)
+    live: true
+    refresh_seconds: 30
+    query: >
+      SELECT FLOOR(EXTRACT(EPOCH FROM (now() - MAX(completed_at))) / 60)::bigint AS value
+      FROM job_runs
+      WHERE job_id = 'sync:google-adsense' AND status = 'success'
+    fallback_empty: true
+
+  - id: earnings_over_time_90d
+    type: line_chart
+    label: Estimated earnings per day (90d)
+    query: >
+      SELECT
+        to_char(report_date, 'YYYY-MM-DD') AS date,
+        ROUND(estimated_earnings, 2)       AS earnings
+      FROM goog_daily
+      WHERE report_date >= (CURRENT_DATE - INTERVAL '90 days')
+      ORDER BY report_date
+    x_key: date
+    y_key: earnings
+    x_label: Date
+    y_label: Earnings
+    fallback_empty: true

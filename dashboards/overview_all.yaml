@@ -1,0 +1,71 @@
+# dashboards/overview_all.yaml — "All Time" period tab.
+# Everything in goog_daily (the sync backfills ~3 years); monthly chart.
+# Reference: docs/04-dashboards-declarative.md
+
+title: All time
+db_engine: postgres
+refresh_seconds: 60
+
+panels:
+
+  - id: earnings_all
+    type: stat
+    label: Earnings (all time)
+    query: >
+      SELECT ROUND(COALESCE(SUM(estimated_earnings), 0), 2) AS value
+      FROM goog_daily
+    fallback_empty: true
+
+  - id: clicks_all
+    type: stat
+    label: Clicks (all time)
+    query: >
+      SELECT COALESCE(SUM(clicks), 0) AS value
+      FROM goog_daily
+    fallback_empty: true
+
+  - id: avg_rpm_all
+    type: stat
+    label: Avg page RPM (all time)
+    query: >
+      SELECT ROUND(COALESCE(AVG(NULLIF(rpm, 0)), 0), 2) AS value
+      FROM goog_daily
+    fallback_empty: true
+
+  - id: current_balance
+    type: stat
+    label: Current balance (unpaid)
+    query: >
+      SELECT ROUND(COALESCE((
+        SELECT (value->>'amount')::numeric
+        FROM goog_sync_state
+        WHERE key = 'balance'
+      ), 0), 2) AS value
+    fallback_empty: true
+
+  - id: last_sync_age
+    type: stat
+    label: Last sync (min ago)
+    live: true
+    refresh_seconds: 30
+    query: >
+      SELECT FLOOR(EXTRACT(EPOCH FROM (now() - MAX(completed_at))) / 60)::bigint AS value
+      FROM job_runs
+      WHERE job_id = 'sync:google-adsense' AND status = 'success'
+    fallback_empty: true
+
+  - id: earnings_by_month_all
+    type: line_chart
+    label: Estimated earnings per month (all time)
+    query: >
+      SELECT
+        to_char(date_trunc('month', report_date), 'YYYY-MM') AS month,
+        ROUND(SUM(estimated_earnings), 2)                    AS earnings
+      FROM goog_daily
+      GROUP BY date_trunc('month', report_date)
+      ORDER BY date_trunc('month', report_date)
+    x_key: month
+    y_key: earnings
+    x_label: Month
+    y_label: Earnings
+    fallback_empty: true

@@ -18,6 +18,7 @@ Reference: docs/06-sync-and-jobs.md
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 
 # requests is a stdlib-adjacent dependency (the SDK does NOT wrap external
@@ -48,6 +49,10 @@ PLUGIN_SLUG = "google-adsense"
 
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 ADSENSE_API_BASE = "https://adsense.googleapis.com/v2"
+
+# How far back to backfill daily rows so the "This year / Last year / All time"
+# period tabs have data. ~3 years; AdSense caps how far daily data goes anyway.
+BACKFILL_DAYS = 365 * 3
 
 # AdSense report metrics we request, mapped to our column names. Order is
 # irrelevant — we resolve values by header name, not position.
@@ -136,11 +141,13 @@ class GoogleAdsenseSync(BaseSyncScript):
     def _fetch_balance(self, account_id: str, access_token: str) -> dict[str, Any] | None:
         """Current unpaid balance via accounts.payments.list.
 
-        AdSense v2 returns a list of Payment objects. Entries WITHOUT a `date`
-        are unpaid amounts (the current balance, e.g. an `.../unpaid` and a
-        `.../youtube-unpaid`); entries WITH a `date` are issued/scheduled
-        payouts. We sum the unpaid (no-date) entries to get "what Google owes
-        you right now". `amount` is a string like "5.71 USD".
+        AdSense v2 returns a list of Payment objects. The current unpaid
+        balance entries are named `.../unpaid` (and `.../youtube-unpaid`);
+        issued/scheduled payouts have other names. We sum the entries whose
+        name ends in "unpaid" → "what Google owes you right now". `amount` is a
+        string like "5.71 USD". If no name matches (response shape differs), we
+        fall back to entries lacking a `date`. The raw response is logged so a
+        remaining mismatch can be diagnosed from /system/logs.
         """
         account = account_id if account_id.startswith("accounts/") else f"accounts/{account_id}"
         resp = requests.get(
@@ -152,22 +159,40 @@ class GoogleAdsenseSync(BaseSyncScript):
             raise RuntimeError(f"payments.list failed (HTTP {resp.status_code})")
 
         payments = resp.json().get("payments", [])
-        total = 0.0
-        currency = "USD"
-        found = False
-        for p in payments:
-            if p.get("date"):           # has a date → an issued/scheduled payout, not current balance
-                continue
-            amount, cur = self._parse_money(p.get("amount"))
-            if amount is None:
-                continue
-            total += amount
-            currency = cur or currency
-            found = True
+        # Log names + amounts so we can see exactly what AdSense returned.
+        self._log(
+            "info",
+            f"AdSense payments.list returned {len(payments)} entries",
+            detail={"payments": [
+                {"name": p.get("name"), "amount": p.get("amount"), "has_date": bool(p.get("date"))}
+                for p in payments[:20]
+            ]},
+        )
+
+        def _accumulate(predicate) -> tuple[float, str, bool]:
+            total, currency, found = 0.0, "USD", False
+            for p in payments:
+                if not predicate(p):
+                    continue
+                amount, cur = self._parse_money(p.get("amount"))
+                if amount is None:
+                    continue
+                total += amount
+                currency = cur or currency
+                found = True
+            return round(total, 2), currency, found
+
+        # Primary: entries named ".../unpaid" (AdSense's current-balance rows).
+        total, currency, found = _accumulate(
+            lambda p: str(p.get("name", "")).rsplit("/", 1)[-1].endswith("unpaid")
+        )
+        # Fallback: entries with no payout date.
+        if not found:
+            total, currency, found = _accumulate(lambda p: not p.get("date"))
 
         if not found:
             return None
-        return {"amount": round(total, 2), "currency": currency}
+        return {"amount": total, "currency": currency}
 
     @staticmethod
     def _parse_money(value: Any) -> tuple[float | None, str | None]:
@@ -234,10 +259,22 @@ class GoogleAdsenseSync(BaseSyncScript):
         Returns a list of dicts keyed by our column names, one per day.
         """
         account = account_id if account_id.startswith("accounts/") else f"accounts/{account_id}"
+
+        # Custom date range (~3 years) so the longer period tabs have data.
+        # v2 reports.generate takes the bounds as split startDate.*/endDate.*
+        # query params; providing them makes the range CUSTOM (no preset needed).
+        end = date.today()
+        start = end - timedelta(days=BACKFILL_DAYS)
         params = [
-            ("dateRange", "LAST_30_DAYS"),
+            ("startDate.year", str(start.year)),
+            ("startDate.month", str(start.month)),
+            ("startDate.day", str(start.day)),
+            ("endDate.year", str(end.year)),
+            ("endDate.month", str(end.month)),
+            ("endDate.day", str(end.day)),
             ("dimensions", "DATE"),
             ("orderBy", "+DATE"),
+            ("limit", "100000"),
         ]
         params += [("metrics", m) for m in METRICS]
 

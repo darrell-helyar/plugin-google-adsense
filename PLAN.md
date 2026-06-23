@@ -182,18 +182,41 @@ to the proven per-dashboard `href` pattern.
 
 ---
 
-### v0.3.0 — Selectable date ranges + payments list (deferred)
+### v0.3.0 — Period tabs (30/60/90d, this year, last year, all time) + backfill + balance fix
 
-**Ticket.** Operator wants traffic/income over a self-selected period (presets
-7 / 30 / 90 / 365 days, This year, All time) with **3 years** of history, plus a
-list of past payouts. Deferred from v0.2.0 to keep that release small.
+**Ticket.** Operator wants earnings/clicks/RPM over selectable periods. UI chosen
+2026-06-23: **period tabs** (one declarative dashboard per period) rather than a
+custom-widget dropdown — reuses the proven per-dashboard navigation (v0.2.2),
+avoids the fragile widget/Trust/update path. Also: balance still shows 0 — the
+v0.2.x unpaid-detection guess (no-`date` entries) was wrong for this account.
 
-**Why it's bigger:** an interactive range selector can't be done declaratively
-(dashboards are parameter-free — docs/04:348), so this needs a **custom React
-widget** + the esbuild/build pipeline + re-Trust. Also: 3-year backfill (switch
-report fetch to a custom `startDate`/`endDate` range with paging), a new
-`goog_payments` table, parameterized `/kpis` & `/daily` (`range` allowlist), and
-`/payments` routes. Scope when v0.2.0 is shipped and verified.
+**Plan.**
+1. **Backfill** — sync report fetch switched from `dateRange=LAST_30_DAYS` to a
+   custom `startDate`/`endDate` (~3 years, `BACKFILL_DAYS`) so This/Last year +
+   All time have data. Sync raises a clear error if the date params are rejected.
+2. **Balance fix** — detect the unpaid entry by **name ending in "unpaid"**
+   (primary), fall back to no-`date` entries; **log the raw payments response**
+   (names + amounts) to `/system/logs` so a remaining mismatch is diagnosable.
+3. **Dashboards** — 6 declarative dashboards: `overview`(30d), `-60d`, `-90d`,
+   `-ytd`, `-lastyear`, `-all`. Daily earnings chart for 30/60/90; **monthly**
+   chart for the year-scale tabs so they stay readable. Shared `current_balance`
+   + `last_sync_age` tiles (always-one-row, per the v0.2.1 fix).
+4. **Navigation/dashboards** — one `href` nav entry + one `dashboards` entry per
+   period (proven pattern). Bump 0.3.0; smoke + preflight; tag.
+
+**Test plan.**
+- [ ] After Update + hard refresh, tabs read: 30 Days | 60 Days | 90 Days | This Year | Last Year | All Time | Settings
+- [ ] Each tab's KPIs + chart reflect that window; year tabs render a monthly chart
+- [ ] After Run sync, All Time shows months older than 30 days (backfill worked)
+- [ ] Current balance shows the real unpaid figure; if still 0, the sync log shows the raw payments entries (names/amounts) to finish the fix
+- [ ] `scripts/smoke-test.sh` + `scripts/preflight.sh` pass; `v0.3.0` tag pushed; version matches
+
+**Known risk (untested live).** The custom date-range param format and the
+payments response shape are best-effort (no local AdSense to test). Both fail
+*loudly*: a bad report range → sync error toast; a bad balance shape → 0 + the
+logged raw payments. Iterate from the log if needed.
+
+**CHANGELOG stub.** See `CHANGELOG.md` "[0.3.0]".
 
 ---
 

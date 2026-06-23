@@ -16,7 +16,7 @@
 # if present). Lowercase, hyphens, no spaces. Used as URL prefix.
 name: google-adsense
 display_name: Google Adsense
-version: 0.2.2
+version: 0.3.0
 description: >
   Pulls your Google AdSense daily earnings report into NousViz: KPI tiles
   for 30-day earnings, clicks and page RPM, plus an earnings-over-time
@@ -147,11 +147,24 @@ databases:
 navigation:
   # One entry PER dashboard, using `href: /plugin/<slug>/<dashboard-name>` —
   # the pattern every working sibling plugin (intercom, statsdrone-stripe,
-  # quickbooks-online) uses. Gives Overview an explicit sidebar link instead of
-  # relying on the page-tab mechanism, which didn't survive plugin updates
-  # (B-fix v0.2.2).
-  - label: Overview
+  # quickbooks-online) uses. Each period is its own tab (v0.3.0).
+  - label: 30 Days
     href: /plugin/google-adsense/overview
+    icon: DollarSign
+  - label: 60 Days
+    href: /plugin/google-adsense/overview-60d
+    icon: DollarSign
+  - label: 90 Days
+    href: /plugin/google-adsense/overview-90d
+    icon: DollarSign
+  - label: This Year
+    href: /plugin/google-adsense/overview-ytd
+    icon: DollarSign
+  - label: Last Year
+    href: /plugin/google-adsense/overview-lastyear
+    icon: DollarSign
+  - label: All Time
+    href: /plugin/google-adsense/overview-all
     icon: DollarSign
 
 
@@ -161,8 +174,23 @@ navigation:
 
 dashboards:
   - name: overview
-    label: Overview
+    label: 30 Days
     file: dashboards/overview.yaml
+  - name: overview-60d
+    label: 60 Days
+    file: dashboards/overview_60d.yaml
+  - name: overview-90d
+    label: 90 Days
+    file: dashboards/overview_90d.yaml
+  - name: overview-ytd
+    label: This Year
+    file: dashboards/overview_ytd.yaml
+  - name: overview-lastyear
+    label: Last Year
+    file: dashboards/overview_lastyear.yaml
+  - name: overview-all
+    label: All Time
+    file: dashboards/overview_all.yaml
 
 
 # Sync ────────────────────────────────────────────────────────────────────────
