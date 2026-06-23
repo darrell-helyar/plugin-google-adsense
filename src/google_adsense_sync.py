@@ -115,9 +115,88 @@ class GoogleAdsenseSync(BaseSyncScript):
                 "rows_seen": len(rows),
             })
 
+        # 4. Current unpaid balance (best-effort — never fail the sync over it).
+        try:
+            balance = self._fetch_balance(account_id, access_token)
+            if balance is not None:
+                self._store_balance(balance)
+                heartbeat(progress={"phase": "balance", "balance": balance["amount"]})
+        except Exception as exc:
+            self._log(
+                "warning",
+                f"Could not fetch AdSense balance (earnings sync unaffected): {exc}",
+            )
+
         self._update_checkpoint(rows_written)
         self._log("info", f"AdSense sync complete: {rows_written} days")
         return {"rows_synced": rows_written}
+
+    # ── Balance / payments ───────────────────────────────────────────────
+
+    def _fetch_balance(self, account_id: str, access_token: str) -> dict[str, Any] | None:
+        """Current unpaid balance via accounts.payments.list.
+
+        AdSense v2 returns a list of Payment objects. Entries WITHOUT a `date`
+        are unpaid amounts (the current balance, e.g. an `.../unpaid` and a
+        `.../youtube-unpaid`); entries WITH a `date` are issued/scheduled
+        payouts. We sum the unpaid (no-date) entries to get "what Google owes
+        you right now". `amount` is a string like "5.71 USD".
+        """
+        account = account_id if account_id.startswith("accounts/") else f"accounts/{account_id}"
+        resp = requests.get(
+            f"{ADSENSE_API_BASE}/{account}/payments",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"payments.list failed (HTTP {resp.status_code})")
+
+        payments = resp.json().get("payments", [])
+        total = 0.0
+        currency = "USD"
+        found = False
+        for p in payments:
+            if p.get("date"):           # has a date → an issued/scheduled payout, not current balance
+                continue
+            amount, cur = self._parse_money(p.get("amount"))
+            if amount is None:
+                continue
+            total += amount
+            currency = cur or currency
+            found = True
+
+        if not found:
+            return None
+        return {"amount": round(total, 2), "currency": currency}
+
+    @staticmethod
+    def _parse_money(value: Any) -> tuple[float | None, str | None]:
+        """Parse an AdSense money string like '5.71 USD' → (5.71, 'USD')."""
+        if not value or not isinstance(value, str):
+            return None, None
+        parts = value.strip().split()
+        try:
+            amount = float(parts[0])
+        except (ValueError, IndexError):
+            return None, None
+        currency = parts[1] if len(parts) > 1 else None
+        return amount, currency
+
+    def _store_balance(self, balance: dict[str, Any]) -> None:
+        import json
+        with get_pg_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO goog_sync_state (key, value, updated_at)
+                VALUES ('balance', %s::jsonb, now())
+                ON CONFLICT (key) DO UPDATE SET
+                    value = EXCLUDED.value,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                (json.dumps({**balance, "as_of": "now"}),),
+            )
+            conn.commit()
 
     # ── OAuth ────────────────────────────────────────────────────────────
 

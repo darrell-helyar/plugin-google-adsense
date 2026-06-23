@@ -45,7 +45,7 @@ from nousviz_sdk import (
 router = APIRouter()
 PLUGIN_SLUG = "google-adsense"
 BASE = f"/plugins/{PLUGIN_SLUG}"
-PLUGIN_VERSION = "0.1.0"   # bump alongside plugin.yaml.version
+PLUGIN_VERSION = "0.2.0"   # bump alongside plugin.yaml.version
 
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
@@ -113,12 +113,15 @@ def health_check() -> dict[str, Any]:
             cur = conn.cursor()
             cur.execute("SELECT count(*), max(report_date) FROM goog_daily")
             n, latest = cur.fetchone()
+            cur.execute("SELECT value->>'amount' FROM goog_sync_state WHERE key = 'balance'")
+            brow = cur.fetchone()
         return {
             "plugin": PLUGIN_SLUG,
             "version": PLUGIN_VERSION,
             "ok": True,
             "days_count": n,
             "latest_report_date": latest.isoformat() if latest else None,
+            "current_balance": (brow[0] if brow else None),
             "as_of": _now_iso(),
         }
     except Exception as e:

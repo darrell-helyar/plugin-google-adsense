@@ -42,6 +42,18 @@ panels:
       WHERE report_date >= (CURRENT_DATE - INTERVAL '30 days')
     fallback_empty: true
 
+  - id: current_balance
+    type: stat
+    label: Current balance (unpaid)
+    # Current unpaid AdSense earnings, written to goog_sync_state by the sync
+    # (key='balance'). Numeric only — currency lives in the label. Blank until
+    # the first sync that reaches the payments endpoint.
+    query: >
+      SELECT ROUND((value->>'amount')::numeric, 2) AS value
+      FROM goog_sync_state
+      WHERE key = 'balance'
+    fallback_empty: true
+
   - id: last_sync_age
     type: stat
     label: Last sync (min ago)

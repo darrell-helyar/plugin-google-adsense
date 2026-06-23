@@ -16,7 +16,7 @@
 # if present). Lowercase, hyphens, no spaces. Used as URL prefix.
 name: google-adsense
 display_name: Google Adsense
-version: 0.1.0
+version: 0.2.0
 description: >
   Pulls your Google AdSense daily earnings report into NousViz: KPI tiles
   for 30-day earnings, clicks and page RPM, plus an earnings-over-time

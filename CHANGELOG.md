@@ -6,7 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-(Draft your CHANGELOG entry here BEFORE writing code. See `PLAN.md` for the SOP.)
+### Added (v0.2.0 — planned)
+
+- **Current balance.** A "Current balance" KPI tile on the Overview dashboard showing your current unpaid AdSense earnings (what Google owes you right now).
+
+### Planned later (v0.3.0)
+
+- Selectable date ranges (Last 7 / 30 / 90 / 365 days, This year, All time), 3 years of history, and a payments-received list — these need an interactive React widget.
 
 ---
 

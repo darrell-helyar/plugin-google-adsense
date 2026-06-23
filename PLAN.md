@@ -89,6 +89,56 @@ Intake answers (from `docs/00-conversation-starter.md`):
 
 ---
 
+### v0.2.0 — Current balance KPI
+
+**Ticket.** v0.1.0 confirmed working on 2026-06-23 (real data: $5.71 earnings /
+34 clicks / 7.91 RPM over the last 30 days, full daily chart). Operator now wants
+the **current AdSense balance** ("what Google owes me right now" — unpaid
+earnings) on the Overview dashboard next to the existing KPIs. Balance is a single
+*current* figure (no daily history), so it's a stat tile, not a chart — and needs
+no React widget.
+
+**Plan.**
+1. **Sync** — after the report fetch, call `accounts.payments.list` (same
+   `adsense.readonly` scope), find the current *unpaid* balance entry, parse its
+   amount + currency, and upsert into the existing `goog_sync_state` table under
+   key `balance` (`{amount, currency, as_of}`). Wrap in try/except so a
+   payments-API hiccup logs a warning but never fails the earnings sync. Verify
+   the exact v2 payments response shape against the live API (don't assume field
+   names) — handle both "amount as 'N.NN CUR' string" and structured forms.
+2. **Dashboard** — add a `stat` panel "Current balance" reading
+   `(value->>'amount')::numeric` from `goog_sync_state` where `key='balance'`,
+   `fallback_empty: true` so it's blank until first synced.
+3. **Ship** — bump `plugin.yaml` version + `routes.py` PLUGIN_VERSION to 0.2.0;
+   surface balance in `/health-check`. No migration (reuses `goog_sync_state`).
+   smoke + preflight; tag `v0.2.0` and push the tag.
+
+**Test plan.** Operator-visible:
+- [ ] After Update + Run sync, Overview shows a "Current balance" tile with a number matching the AdSense console "Your balance" (within rounding)
+- [ ] Existing earnings / clicks / RPM tiles + chart unchanged (no regression)
+- [ ] If the payments API errors, the earnings sync still completes (balance tile stays blank, warning in logs) — sync does not fail
+- [ ] `git ls-remote --tags origin` shows `v0.2.0`; `plugin.yaml` version matches
+- [ ] `scripts/smoke-test.sh` + `scripts/preflight.sh` pass
+
+**CHANGELOG stub.** See `CHANGELOG.md` "[Unreleased]".
+
+---
+
+### v0.3.0 — Selectable date ranges + payments list (deferred)
+
+**Ticket.** Operator wants traffic/income over a self-selected period (presets
+7 / 30 / 90 / 365 days, This year, All time) with **3 years** of history, plus a
+list of past payouts. Deferred from v0.2.0 to keep that release small.
+
+**Why it's bigger:** an interactive range selector can't be done declaratively
+(dashboards are parameter-free — docs/04:348), so this needs a **custom React
+widget** + the esbuild/build pipeline + re-Trust. Also: 3-year backfill (switch
+report fetch to a custom `startDate`/`endDate` range with paging), a new
+`goog_payments` table, parameterized `/kpis` & `/daily` (`range` allowlist), and
+`/payments` routes. Scope when v0.2.0 is shipped and verified.
+
+---
+
 <!--
 Template for subsequent versions — copy-paste and fill in:
 
