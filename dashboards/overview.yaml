@@ -46,12 +46,16 @@ panels:
     type: stat
     label: Current balance (unpaid)
     # Current unpaid AdSense earnings, written to goog_sync_state by the sync
-    # (key='balance'). Numeric only — currency lives in the label. Blank until
-    # the first sync that reaches the payments endpoint.
+    # (key='balance'). Numeric only — currency lives in the label. Scalar
+    # subquery + COALESCE so this ALWAYS returns exactly one row (0 until the
+    # first balance is synced). A bare `WHERE key='balance'` returns zero rows
+    # before then, which breaks the whole dashboard's load (B-fix v0.2.1).
     query: >
-      SELECT ROUND((value->>'amount')::numeric, 2) AS value
-      FROM goog_sync_state
-      WHERE key = 'balance'
+      SELECT ROUND(COALESCE((
+        SELECT (value->>'amount')::numeric
+        FROM goog_sync_state
+        WHERE key = 'balance'
+      ), 0), 2) AS value
     fallback_empty: true
 
   - id: last_sync_age

@@ -6,13 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-### Added (v0.2.0 — planned)
-
-- **Current balance.** A "Current balance" KPI tile on the Overview dashboard showing your current unpaid AdSense earnings (what Google owes you right now).
-
 ### Planned later (v0.3.0)
 
 - Selectable date ranges (Last 7 / 30 / 90 / 365 days, This year, All time), 3 years of history, and a payments-received list — these need an interactive React widget.
+
+---
+
+## [0.2.1] — Fix: Overview dashboard disappeared
+
+### Fixed
+
+- The Overview tab vanished after updating to 0.2.0. The new "Current balance" tile used a query that returns zero rows until a balance is stored, which broke the whole dashboard's load. The tile now always returns a single value (0 until first synced), so Overview renders normally.
+
+---
+
+## [0.2.0] — Current balance KPI
+
+### Added
+
+- **Current balance.** A "Current balance (unpaid)" KPI tile on the Overview dashboard showing your current unpaid AdSense earnings (what Google owes you right now), fetched from the AdSense payments endpoint. Best-effort: a payments-API error never blocks the earnings sync.
 
 ---
 

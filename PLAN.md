@@ -124,6 +124,39 @@ no React widget.
 
 ---
 
+### v0.2.1 — Fix: Overview dashboard dropped by zero-row balance query
+
+**Ticket.** After updating to v0.2.0 the **Overview tab disappeared** (verified
+2026-06-23: Installed list shows v0.2.0, no error; the tab was present in v0.1.0
+and vanished). Cause: the `current_balance` stat panel queries
+`SELECT … FROM goog_sync_state WHERE key='balance'`, which returns **zero rows**
+until the first balance is stored. Every other (working) stat panel uses an
+aggregate (`COALESCE(SUM(...))`) that always returns exactly one row. A zero-row
+result breaks the dashboard's load, so NousViz drops the whole dashboard (no
+visible error). Earnings/clicks/RPM data itself is fine.
+
+**Plan.**
+1. Rewrite the `current_balance` query as a scalar subquery wrapped in
+   `COALESCE(…, 0)` so it **always returns exactly one row** (0 until a balance
+   is synced) — matching the pattern of the other tiles.
+2. Bump version to 0.2.1 (plugin.yaml + routes.py); smoke + preflight; tag.
+
+**Test plan.**
+- [ ] After Update + hard refresh, the **Overview tab reappears** with all tiles (earnings, clicks, RPM, current balance, chart)
+- [ ] Current balance tile shows 0 before a balance sync, then the real figure after
+- [ ] No regression on the earnings tiles/chart
+- [ ] `scripts/smoke-test.sh` + `scripts/preflight.sh` pass; `v0.2.1` tag pushed; version matches
+
+**Follow-up (after confirmed fixed).** File a NousViz core ticket: a single
+zero-row / malformed stat panel silently drops the entire dashboard with no
+operator-visible error — any plugin can hit this. Robustness gap worth fixing in
+core (skip the bad panel, surface the error) rather than every plugin defending
+against it. Verify the repro before filing.
+
+**CHANGELOG stub.** See `CHANGELOG.md` "[0.2.1]".
+
+---
+
 ### v0.3.0 — Selectable date ranges + payments list (deferred)
 
 **Ticket.** Operator wants traffic/income over a self-selected period (presets
