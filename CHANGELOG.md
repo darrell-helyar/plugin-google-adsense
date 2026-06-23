@@ -12,6 +12,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ---
 
+## [0.2.2] — Fix: Overview reachable from the sidebar
+
+### Fixed
+
+- The Overview tab stayed missing after updating. Switched navigation to give each dashboard its own sidebar entry (`href: /plugin/google-adsense/overview`) — the pattern every other working plugin uses — instead of the single-link shortcut that relied on a page tab. Overview now appears as a direct sidebar link.
+
+---
+
 ## [0.2.1] — Fix: Overview dashboard disappeared
 
 ### Fixed

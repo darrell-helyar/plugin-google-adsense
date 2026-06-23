@@ -157,6 +157,31 @@ against it. Verify the repro before filing.
 
 ---
 
+### v0.2.2 — Fix: Overview reachable via sidebar (per-dashboard navigation)
+
+**Ticket.** Overview still missing after the v0.2.1 update; operator asked to fix
+without reinstall. Compared `navigation:` across installed sibling plugins
+(`plugin-intercom`, `plugin-statsdrone-stripe`, `plugin-quickbooks-online`): all
+declare **one nav entry per dashboard** using `href: /plugin/<slug>/<dashboard>`
+(e.g. `href: /plugin/intercom/overview`), which renders a reliable sidebar entry.
+This plugin used the skeleton's single-entry shortcut (`path: /plugin/google-adsense`),
+relying on the page-tab mechanism — which is what didn't survive updates. Switch
+to the proven per-dashboard `href` pattern.
+
+**Plan.**
+1. `navigation:` — replace the single `path:` entry with `label: Overview`,
+   `href: /plugin/google-adsense/overview`, `icon: DollarSign`.
+2. Bump version 0.2.2; smoke + preflight; tag + push.
+
+**Test plan.**
+- [ ] After Update + hard refresh, "Google AdSense" in the sidebar exposes an **Overview** entry that loads the dashboard with all tiles (earnings, clicks, RPM, balance, chart)
+- [ ] If Overview is STILL missing after the update → confirms NousViz updates don't re-register navigation/dashboards; reinstall is then required (and the update-re-registration gap is a core ticket)
+- [ ] `scripts/smoke-test.sh` + `scripts/preflight.sh` pass; `v0.2.2` tag pushed; version matches
+
+**CHANGELOG stub.** See `CHANGELOG.md` "[0.2.2]".
+
+---
+
 ### v0.3.0 — Selectable date ranges + payments list (deferred)
 
 **Ticket.** Operator wants traffic/income over a self-selected period (presets
